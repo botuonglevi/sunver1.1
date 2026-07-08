@@ -1,0 +1,16 @@
+{
+  "name": "dice-prediction-system",
+  "version": "1.0.0",
+  "description": "Ultra Dice Prediction System - Học từ lịch sử API và dự đoán kết quả",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  },
+  "keywords": ["dice", "prediction", "ai", "machine-learning", "api"],
+  "author": "",
+  "license": "MIT"
+}
