@@ -13,7 +13,7 @@ const CONFIG = {
     MODEL_FILE: 'model_state.json',
     LEARN_EPOCHS: 3,
     BATCH_SIZE: 100,
-    AUTO_FETCH_INTERVAL: 60000, // 60 giây (1 phút)
+    AUTO_FETCH_INTERVAL: 6000, // 60 giây (1 phút)
     AUTO_FETCH_ENABLED: true,
     MAX_HISTORY: 10000
 };
