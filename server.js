@@ -3,7 +3,7 @@ const http = require('http');
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
-const { UltraDicePredictionSystem } = require('./thuattoan.js');
+const { UltraDicePredictionSystem } = require('./tt2.js');
 
 // Cấu hình
 const CONFIG = {
