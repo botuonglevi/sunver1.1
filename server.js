@@ -7,13 +7,13 @@ const { UltraDicePredictionSystem } = require('./thuattoan.js');
 
 // Cấu hình
 const CONFIG = {
-    PORT: 3000,
+    PORT: process.env.PORT || 3000,
     API_URL: 'http://fi8.bot-hosting.net:20692/api/his',
     DATA_FILE: 'history_data.json',
     MODEL_FILE: 'model_state.json',
     LEARN_EPOCHS: 3,
     BATCH_SIZE: 100,
-    AUTO_FETCH_INTERVAL: 6000, // 60 giây (1 phút)
+    AUTO_FETCH_INTERVAL: 60000, // 60 giây
     AUTO_FETCH_ENABLED: true,
     MAX_HISTORY: 10000
 };
@@ -37,8 +37,13 @@ class DataManager {
     loadHistory(filename = CONFIG.DATA_FILE) {
         const filepath = path.join(this.dataDir, filename);
         if (fs.existsSync(filepath)) {
-            const data = fs.readFileSync(filepath, 'utf8');
-            return JSON.parse(data);
+            try {
+                const data = fs.readFileSync(filepath, 'utf8');
+                return JSON.parse(data);
+            } catch (e) {
+                console.error('❌ Lỗi đọc file history:', e.message);
+                return null;
+            }
         }
         return null;
     }
@@ -64,19 +69,24 @@ class DataManager {
     loadModelState(system, filename = CONFIG.MODEL_FILE) {
         const filepath = path.join(this.dataDir, filename);
         if (fs.existsSync(filepath)) {
-            const data = fs.readFileSync(filepath, 'utf8');
-            const state = JSON.parse(data);
-            
-            system.history = state.history || [];
-            system.weights = state.weights || {};
-            system.performance = state.performance || {};
-            system.patternDatabase = state.patternDatabase || {};
-            system.sessionStats = state.sessionStats || {};
-            system.marketState = state.marketState || {};
-            system.adaptiveParameters = state.adaptiveParameters || {};
-            system.learningStats = state.learningStats || {};
-            
-            return state;
+            try {
+                const data = fs.readFileSync(filepath, 'utf8');
+                const state = JSON.parse(data);
+                
+                system.history = state.history || [];
+                system.weights = state.weights || {};
+                system.performance = state.performance || {};
+                system.patternDatabase = state.patternDatabase || {};
+                system.sessionStats = state.sessionStats || {};
+                system.marketState = state.marketState || {};
+                system.adaptiveParameters = state.adaptiveParameters || {};
+                system.learningStats = state.learningStats || {};
+                
+                return state;
+            } catch (e) {
+                console.error('❌ Lỗi đọc file model:', e.message);
+                return null;
+            }
         }
         return null;
     }
@@ -84,14 +94,135 @@ class DataManager {
     async fetchNewData(apiUrl) {
         try {
             const fetch = require('node-fetch');
-            const response = await fetch(apiUrl);
+            console.log(`🌐 Đang gọi API: ${apiUrl}`);
+            
+            const response = await fetch(apiUrl, {
+                timeout: 30000 // 30 giây timeout
+            });
+            
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
+            
             const data = await response.json();
-            return data;
+            
+            // Kiểm tra dữ liệu trả về
+            if (!data) {
+                console.error('❌ API trả về null/undefined');
+                return null;
+            }
+
+            console.log(`📊 Loại dữ liệu nhận được: ${typeof data}`);
+            
+            // Nếu data là object, thử lấy mảng từ các key phổ biến
+            let result = data;
+            
+            if (typeof data === 'object' && !Array.isArray(data)) {
+                console.log('📦 API trả về object, đang tìm mảng dữ liệu...');
+                
+                // Hiển thị cấu trúc object để debug
+                console.log('📋 Cấu trúc object:', JSON.stringify(data).substring(0, 500));
+                
+                // Thử các key có thể chứa mảng
+                const possibleKeys = ['data', 'results', 'items', 'list', 'history', 'records', 'rows', 'Data', 'Result', 'list_data', 'data_list'];
+                let foundArray = null;
+                
+                for (const key of possibleKeys) {
+                    if (data[key] && Array.isArray(data[key])) {
+                        foundArray = data[key];
+                        console.log(`✅ Tìm thấy mảng tại key: "${key}" (${foundArray.length} phần tử)`);
+                        break;
+                    }
+                }
+                
+                // Nếu không tìm thấy, thử lấy tất cả values là mảng
+                if (!foundArray) {
+                    for (const key of Object.keys(data)) {
+                        if (Array.isArray(data[key]) && data[key].length > 0) {
+                            foundArray = data[key];
+                            console.log(`✅ Tìm thấy mảng tại key: "${key}" (${foundArray.length} phần tử)`);
+                            break;
+                        }
+                    }
+                }
+                
+                // Nếu vẫn không tìm thấy, kiểm tra xem object có phải là 1 mảng được đánh index không
+                if (!foundArray) {
+                    const values = Object.values(data);
+                    if (values.some(v => Array.isArray(v))) {
+                        foundArray = values.find(v => Array.isArray(v));
+                        console.log(`✅ Tìm thấy mảng từ object values (${foundArray.length} phần tử)`);
+                    }
+                }
+                
+                result = foundArray || [];
+            }
+            
+            // Đảm bảo result là mảng
+            if (!Array.isArray(result)) {
+                console.error('❌ Dữ liệu không phải mảng:', typeof result);
+                if (result && typeof result === 'object') {
+                    const values = Object.values(result);
+                    if (values.some(v => Array.isArray(v))) {
+                        result = values.find(v => Array.isArray(v)) || [];
+                    } else {
+                        result = [result];
+                    }
+                } else {
+                    result = [];
+                }
+            }
+            
+            console.log(`📊 API trả về ${result.length} phiên`);
+            
+            // Kiểm tra cấu trúc từng phần tử
+            if (result.length > 0) {
+                const sample = result[0];
+                console.log(`📋 Mẫu dữ liệu:`, JSON.stringify(sample).substring(0, 300));
+                
+                // Hiển thị các key có trong sample
+                console.log(`📋 Các key trong dữ liệu:`, Object.keys(sample).join(', '));
+                
+                // Kiểm tra và chuẩn hóa dữ liệu
+                result = result.map((item, index) => {
+                    const normalized = { ...item };
+                    
+                    // Thêm index nếu chưa có
+                    if (!normalized.index && !normalized.phien) {
+                        normalized.index = index + 1;
+                    }
+                    
+                    // Chuẩn hóa kết quả
+                    const ketQua = normalized.ket_qua || normalized.result || normalized.Result || normalized.status || '';
+                    
+                    // Chuyển đổi "Tài" -> "T", "Xỉu" -> "X"
+                    if (typeof ketQua === 'string') {
+                        if (ketQua.toLowerCase().includes('tài') || ketQua.toLowerCase().includes('tai')) {
+                            normalized.result = 'T';
+                        } else if (ketQua.toLowerCase().includes('xỉu') || ketQua.toLowerCase().includes('xiu')) {
+                            normalized.result = 'X';
+                        } else {
+                            // Thử với các giá trị khác
+                            const upper = ketQua.toUpperCase();
+                            if (upper === 'T' || upper === 'TAI') {
+                                normalized.result = 'T';
+                            } else if (upper === 'X' || upper === 'XIU') {
+                                normalized.result = 'X';
+                            } else {
+                                normalized.result = ketQua;
+                            }
+                        }
+                    }
+                    
+                    return normalized;
+                });
+            }
+            
+            return result;
+            
         } catch (error) {
             console.error('❌ Lỗi fetch API:', error.message);
+            console.error('Stack:', error.stack);
             return null;
         }
     }
@@ -101,11 +232,20 @@ class DataManager {
             return newData;
         }
 
-        const lastOldSession = oldData[oldData.length - 1];
-        const lastOldIndex = lastOldSession ? lastOldSession.index || 0 : 0;
+        if (!newData || newData.length === 0) {
+            return [];
+        }
 
+        // Lấy phiên cuối cùng từ dữ liệu cũ
+        let lastOldIndex = 0;
+        if (oldData.length > 0) {
+            const lastItem = oldData[oldData.length - 1];
+            lastOldIndex = lastItem?.phien || lastItem?.index || lastItem?.id || lastItem?.no || 0;
+        }
+
+        // Lọc phiên mới (dựa trên phien hoặc index)
         const newSessions = newData.filter(item => {
-            const currentIndex = item.index || 0;
+            const currentIndex = item?.phien || item?.index || item?.id || item?.no || 0;
             return currentIndex > lastOldIndex;
         });
 
@@ -114,14 +254,59 @@ class DataManager {
 
     mergeHistory(oldData, newSessions) {
         if (!oldData || oldData.length === 0) {
-            return newSessions;
+            return newSessions || [];
         }
+        if (!newSessions || newSessions.length === 0) {
+            return oldData;
+        }
+        
         const merged = [...oldData, ...newSessions];
-        // Giới hạn số lượng để tránh quá tải
+        // Giới hạn số lượng
         if (merged.length > CONFIG.MAX_HISTORY) {
             return merged.slice(-CONFIG.MAX_HISTORY);
         }
         return merged;
+    }
+
+    // Lấy kết quả từ item
+    getResultFromItem(item) {
+        if (!item) return null;
+        
+        // Thử các key khác nhau
+        const result = item.result || item.Result || item.ket_qua || item.status || item.prediction || item.outcome;
+        
+        if (!result) return null;
+        
+        // Xử lý string
+        if (typeof result === 'string') {
+            const lower = result.toLowerCase();
+            if (lower === 't' || lower === 'tài' || lower === 'tai') {
+                return 'T';
+            }
+            if (lower === 'x' || lower === 'xỉu' || lower === 'xiu') {
+                return 'X';
+            }
+            // Thử với uppercase
+            const upper = result.toUpperCase();
+            if (upper === 'T' || upper === 'TAI') {
+                return 'T';
+            }
+            if (upper === 'X' || upper === 'XIU') {
+                return 'X';
+            }
+        }
+        
+        // Xử lý number
+        if (typeof result === 'number') {
+            return result > 0.5 ? 'T' : 'X';
+        }
+        
+        // Xử lý boolean
+        if (typeof result === 'boolean') {
+            return result ? 'T' : 'X';
+        }
+        
+        return null;
     }
 }
 
@@ -139,6 +324,7 @@ class PredictionServer {
         this.fetchCount = 0;
         this.lastFetchTime = null;
         this.totalFetched = 0;
+        this.lastApiData = null;
         
         // Tải model nếu có
         this.loadModel();
@@ -166,10 +352,10 @@ class PredictionServer {
     startAutoFetch() {
         console.log(`🔄 Auto-fetch enabled: mỗi ${CONFIG.AUTO_FETCH_INTERVAL / 1000} giây`);
         
-        // Fetch ngay lập tức khi start
+        // Fetch ngay lập tức
         setTimeout(() => {
             this.autoFetch();
-        }, 2000);
+        }, 3000);
 
         // Lên lịch fetch định kỳ
         this.autoFetchTimer = setInterval(() => {
@@ -202,19 +388,49 @@ class PredictionServer {
                 return;
             }
 
+            if (!Array.isArray(apiData)) {
+                console.log(`⚠️ API trả về không phải mảng: ${typeof apiData}`);
+                return;
+            }
+
+            if (apiData.length === 0) {
+                console.log('📊 API trả về mảng rỗng');
+                return;
+            }
+
+            this.lastApiData = apiData;
+            console.log(`📊 API trả về ${apiData.length} phiên`);
+
+            // Lọc lấy các phiên hợp lệ (có kết quả T/X)
+            const validData = apiData.filter(item => {
+                const result = this.dataManager.getResultFromItem(item);
+                return result === 'T' || result === 'X';
+            });
+
+            if (validData.length === 0) {
+                console.log('⚠️ Không có phiên hợp lệ (T/X) trong dữ liệu');
+                // Hiển thị mẫu dữ liệu để debug
+                if (apiData.length > 0) {
+                    console.log('📋 Mẫu dữ liệu:', JSON.stringify(apiData[0]).substring(0, 200));
+                }
+                return;
+            }
+
+            console.log(`✅ Có ${validData.length} phiên hợp lệ`);
+
             const oldData = this.dataManager.loadHistory();
             let newSessions = [];
             let mergedData = [];
 
             if (oldData) {
-                newSessions = this.dataManager.getNewSessions(oldData, apiData);
+                newSessions = this.dataManager.getNewSessions(oldData, validData);
                 mergedData = this.dataManager.mergeHistory(oldData, newSessions);
+                console.log(`🆕 Phiên mới: ${newSessions.length}`);
+                console.log(`📚 Tổng: ${mergedData.length}`);
             } else {
-                mergedData = apiData.map((item, index) => ({
-                    ...item,
-                    index: index + 1
-                }));
+                mergedData = validData;
                 newSessions = mergedData;
+                console.log(`📚 Tổng: ${mergedData.length} (toàn bộ mới)`);
             }
 
             this.lastFetchTime = new Date().toISOString();
@@ -225,7 +441,6 @@ class PredictionServer {
             }
 
             console.log(`📊 Phát hiện ${newSessions.length} phiên mới!`);
-            console.log(`📚 Tổng: ${mergedData.length} phiên`);
 
             // Lưu dữ liệu
             this.dataManager.saveHistory(mergedData);
@@ -233,23 +448,43 @@ class PredictionServer {
             // Học dữ liệu mới
             console.log('📖 Đang học dữ liệu mới...');
             
-            const newResults = newSessions.map(item => item.result).filter(r => r === 'T' || r === 'X');
-            
-            // Thêm vào hệ thống
-            for (const result of newResults) {
-                this.system.addResult(result);
-                this.system.updatePerformance(result);
-                if (this.system.history.length % 10 === 0) {
-                    this.system.updatePatternDatabase();
-                }
+            const newResults = newSessions
+                .map(item => this.dataManager.getResultFromItem(item))
+                .filter(r => r === 'T' || r === 'X');
+
+            if (newResults.length === 0) {
+                console.log('⚠️ Không có kết quả hợp lệ để học');
+                return;
             }
 
-            // Học thêm epochs cho dữ liệu mới
-            for (let epoch = 0; epoch < CONFIG.LEARN_EPOCHS; epoch++) {
-                for (const result of newResults) {
+            console.log(`📊 Học ${newResults.length} kết quả mới`);
+
+            // Nếu chưa có history, reset
+            if (this.system.history.length === 0) {
+                // Học toàn bộ dữ liệu
+                const allResults = mergedData
+                    .map(item => this.dataManager.getResultFromItem(item))
+                    .filter(r => r === 'T' || r === 'X');
+                
+                for (const result of allResults) {
+                    this.system.addResult(result);
                     this.system.updatePerformance(result);
                 }
+                console.log(`📚 Đã học toàn bộ ${allResults.length} phiên`);
+            } else {
+                // Chỉ học phiên mới
+                for (const result of newResults) {
+                    this.system.addResult(result);
+                    this.system.updatePerformance(result);
+                    if (this.system.history.length % 10 === 0) {
+                        this.system.updatePatternDatabase();
+                    }
+                }
+                console.log(`📚 Đã thêm ${newResults.length} phiên mới`);
             }
+
+            // Cập nhật pattern database
+            this.system.updatePatternDatabase();
 
             // Lưu model
             this.dataManager.saveModelState(this.system);
@@ -266,6 +501,7 @@ class PredictionServer {
 
         } catch (error) {
             console.error('❌ Lỗi auto-fetch:', error.message);
+            console.error('Stack:', error.stack);
         }
     }
 
@@ -295,23 +531,49 @@ class PredictionServer {
                 return { status: 'error', message: 'Không thể lấy dữ liệu từ API!' };
             }
 
+            if (!Array.isArray(apiData)) {
+                this.isLearning = false;
+                return { 
+                    status: 'error', 
+                    message: `Dữ liệu API không phải mảng: ${typeof apiData}` 
+                };
+            }
+
             console.log(`📊 Nhận được ${apiData.length} phiên từ API`);
+
+            // Lọc dữ liệu hợp lệ
+            const validData = apiData.filter(item => {
+                const result = this.dataManager.getResultFromItem(item);
+                return result === 'T' || result === 'X';
+            });
+
+            if (validData.length === 0) {
+                this.isLearning = false;
+                console.log('⚠️ Không có phiên hợp lệ (T/X)');
+                if (apiData.length > 0) {
+                    console.log('📋 Mẫu:', JSON.stringify(apiData[0]).substring(0, 200));
+                }
+                return { 
+                    status: 'error', 
+                    message: 'Không có phiên hợp lệ (T/X) trong dữ liệu' 
+                };
+            }
+
+            console.log(`✅ Có ${validData.length} phiên hợp lệ`);
 
             const oldData = this.dataManager.loadHistory();
             let newSessions = [];
             let mergedData = [];
 
             if (oldData) {
-                newSessions = this.dataManager.getNewSessions(oldData, apiData);
+                newSessions = this.dataManager.getNewSessions(oldData, validData);
                 mergedData = this.dataManager.mergeHistory(oldData, newSessions);
                 console.log(`🆕 Phiên mới: ${newSessions.length}`);
                 console.log(`📚 Tổng: ${mergedData.length}`);
             } else {
-                mergedData = apiData.map((item, index) => ({
-                    ...item,
-                    index: index + 1
-                }));
+                mergedData = validData;
                 newSessions = mergedData;
+                console.log(`📚 Tổng: ${mergedData.length} (toàn bộ mới)`);
             }
 
             if (newSessions.length === 0 && oldData) {
@@ -328,8 +590,15 @@ class PredictionServer {
             this.dataManager.saveHistory(mergedData);
 
             // Học
-            const results = mergedData.map(item => item.result).filter(r => r === 'T' || r === 'X');
-            
+            const results = mergedData
+                .map(item => this.dataManager.getResultFromItem(item))
+                .filter(r => r === 'T' || r === 'X');
+
+            if (results.length === 0) {
+                this.isLearning = false;
+                return { status: 'error', message: 'Không có kết quả hợp lệ để học' };
+            }
+
             // Reset và học lại toàn bộ
             this.system.history = [];
             for (let i = 0; i < results.length; i++) {
@@ -351,6 +620,9 @@ class PredictionServer {
                 }
             }
 
+            // Cập nhật pattern database
+            this.system.updatePatternDatabase();
+
             // Lưu model
             this.dataManager.saveModelState(this.system);
             
@@ -368,12 +640,14 @@ class PredictionServer {
                 newSessions: newSessions.length,
                 patternCount: Object.keys(this.system.patternDatabase).length,
                 accuracy: this.getAccuracy() + '%',
-                marketState: this.system.marketState
+                marketState: this.system.marketState,
+                lastPhiên: results.length > 0 ? mergedData[mergedData.length - 1]?.phien || 'N/A' : 'N/A'
             };
 
         } catch (error) {
             this.isLearning = false;
             console.error('❌ Lỗi học:', error.message);
+            console.error('Stack:', error.stack);
             return { status: 'error', message: error.message };
         }
     }
@@ -540,10 +814,28 @@ class PredictionServer {
             };
         }
 
-        const history = this.system.history.slice(-limit).map((result, index) => ({
-            step: this.system.history.length - limit + index + 1,
-            result: result
-        }));
+        // Lấy lịch sử từ file nếu có
+        const historyData = this.dataManager.loadHistory();
+        let history = [];
+        
+        if (historyData) {
+            history = historyData.slice(-limit).map(item => ({
+                phien: item.phien || item.index || 'N/A',
+                ket_qua: item.ket_qua || item.result || 'N/A',
+                result: this.dataManager.getResultFromItem(item) || 'N/A',
+                tong: item.tong || item.total || 'N/A',
+                xuc_xac: `${item.xuc_xac_1 || '?'}, ${item.xuc_xac_2 || '?'}, ${item.xuc_xac_3 || '?'}`
+            }));
+        } else {
+            // Fallback: lấy từ system history
+            history = this.system.history.slice(-limit).map((result, index) => ({
+                phien: this.system.history.length - limit + index + 1,
+                ket_qua: result,
+                result: result,
+                tong: 'N/A',
+                xuc_xac: 'N/A'
+            }));
+        }
 
         return {
             status: 'success',
@@ -738,6 +1030,12 @@ httpServer.listen(CONFIG.PORT, () => {
     console.log('🔄 AUTO-FETCH:');
     console.log(`  Trạng thái: ${CONFIG.AUTO_FETCH_ENABLED ? '✅ BẬT' : '❌ TẮT'}`);
     console.log(`  Khoảng cách: ${CONFIG.AUTO_FETCH_INTERVAL / 1000} giây`);
+    console.log('');
+    console.log('📋 Định dạng API hỗ trợ:');
+    console.log(`  - phien: số phiên`);
+    console.log(`  - ket_qua: "Tài" hoặc "Xỉu"`);
+    console.log(`  - tong: tổng điểm`);
+    console.log(`  - xuc_xac_1, xuc_xac_2, xuc_xac_3: giá trị xúc xắc`);
     console.log('');
     console.log('═'.repeat(50));
 
