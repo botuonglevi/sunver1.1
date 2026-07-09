@@ -1,16 +1,33 @@
 {
   "name": "dice-prediction-system",
   "version": "1.0.0",
-  "description": "Ultra Dice Prediction System - Học từ lịch sử API và dự đoán kết quả",
-  "main": "server.js",
+  "description": "Hệ thống dự đoán xúc xắc Ultra - Ultra Dice Prediction System",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node index.js learn",
+    "predict": "node index.js predict",
+    "realtime": "node index.js realtime",
+    "monitor": "node index.js monitor",
+    "update": "node index.js update",
+    "info": "node index.js info",
+    "stats": "node index.js stats",
+    "test": "node index.js test",
+    "help": "node index.js help"
   },
+  "keywords": [
+    "prediction",
+    "dice",
+    "machine-learning",
+    "pattern-recognition",
+    "forecasting"
+  ],
+  "author": "AI Prediction Team",
+  "license": "MIT",
   "dependencies": {
-    "node-fetch": "^2.6.7"
+    "node-fetch": "^2.6.11"
   },
-  "keywords": ["dice", "prediction", "ai", "machine-learning", "api"],
-  "author": "",
-  "license": "MIT"
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "devDependencies": {}
 }
