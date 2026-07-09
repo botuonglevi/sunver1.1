@@ -1,8 +1,12 @@
+// ============================================
+// FILE: package.json (sửa)
+// ============================================
 {
   "name": "dice-prediction-system",
   "version": "1.0.0",
   "description": "Hệ thống dự đoán xúc xắc Ultra - Ultra Dice Prediction System",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js learn",
     "predict": "node index.js predict",
@@ -27,7 +31,7 @@
     "node-fetch": "^2.6.11"
   },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=18.0.0"
   },
   "devDependencies": {}
 }
